@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useMemo } from 'react';
 import { 
     getFinishedGoods, getInventory, getPurchaseOrders, createPurchaseOrder, 
@@ -8,7 +9,7 @@ import {
     getMonthlyBudget, setMonthlyBudget 
 } from '../services/sheetService';
 import { InventoryItem, PurchaseOrder, Customer, FinishedGood, SalesRecord, DailyCostMetrics, Supplier, SalesStatus, Budget } from '../types';
-import { ShoppingCart, AlertTriangle, CheckCircle2, Truck, Plus, Trash2, Building2, TrendingUp, PieChart, Store, FileText, Send, Printer, User, Pencil, Clock, Sprout, FileClock, PackageCheck, Receipt, Loader2, Target, ChevronDown, ChevronUp, X, Settings, ShoppingBag, RefreshCw, Wallet, XCircle, LayoutList, Calendar, ClipboardList, RotateCcw, FileMinus, FileSearch } from 'lucide-react';
+import { ShoppingCart, AlertTriangle, CheckCircle2, Truck, Plus, Trash2, Building2, TrendingUp, PieChart, Store, FileText, Send, Printer, User, Pencil, Clock, Sprout, FileClock, PackageCheck, Receipt, Loader2, Target, ChevronDown, ChevronUp, X, Settings, ShoppingBag, RefreshCw, Wallet, XCircle, LayoutList, Calendar, ClipboardList, RotateCcw, FileMinus, FileSearch, Tags, ArrowRight } from 'lucide-react';
 
 interface FinanceProps {
   allowedTabs?: string[]; 
@@ -70,7 +71,7 @@ const FinancePage: React.FC<FinanceProps> = ({ allowedTabs = ['procurement', 'sa
     name: '', address: '', contact: '', itemName: '', itemType: 'PACKAGING', itemSubtype: 'POUCH', packSize: 100, unitCost: 45 
   });
   
-  const [newCustomer, setNewCustomer] = useState<Partial<Customer>>({ name: '', email: '', contact: '', address: '', type: 'B2C', status: 'ACTIVE' });
+  const [newCustomer, setNewCustomer] = useState<Partial<Customer>>({ name: '', email: '', contact: '', address: '', type: 'B2C', status: 'ACTIVE', favoriteProduct: '' });
   const [salesCustomer, setSalesCustomer] = useState('');
   const [salesGood, setSalesGood] = useState('');
   const [salesQty, setSalesQty] = useState('1');
@@ -179,7 +180,6 @@ const FinancePage: React.FC<FinanceProps> = ({ allowedTabs = ['procurement', 'sa
       setUpdatingId(sale.id);
       try {
           const res = await updateSaleStatus(sale.id, newStatus as SalesStatus);
-          // FIX: Changed check from (res.success && res.data) to (res.success) to align with backend return
           if (res.success) {
               setSales(prev => prev.map(s => s.id === sale.id ? { ...s, status: newStatus as SalesStatus } : s));
               if (selectedSale?.id === sale.id) setSelectedSale({ ...selectedSale, status: newStatus as SalesStatus });
@@ -211,8 +211,22 @@ const FinancePage: React.FC<FinanceProps> = ({ allowedTabs = ['procurement', 'sa
 
   const handleAddCustomer = async (e: React.FormEvent) => { 
       e.preventDefault(); 
-      const res = await addCustomer({ id: `cust-${Date.now()}`, name: newCustomer.name || 'Unknown', email: newCustomer.email || '', contact: newCustomer.contact || '', address: newCustomer.address || '', type: newCustomer.type || 'B2C', status: 'ACTIVE', joinDate: new Date().toISOString() } as Customer); 
-      if (res.success) { setShowCustomerModal(false); setNewCustomer({ name: '', email: '', contact: '', address: '', type: 'B2C' }); await refreshData(); }
+      const res = await addCustomer({ 
+        id: `cust-${Date.now()}`, 
+        name: newCustomer.name || 'Unknown', 
+        email: newCustomer.email || '', 
+        contact: newCustomer.contact || '', 
+        address: newCustomer.address || '', 
+        type: newCustomer.type || 'B2C', 
+        status: newCustomer.status || 'ACTIVE', 
+        favoriteProduct: newCustomer.favoriteProduct || '',
+        joinDate: new Date().toISOString() 
+      } as Customer); 
+      if (res.success) { 
+        setShowCustomerModal(false); 
+        setNewCustomer({ name: '', email: '', contact: '', address: '', type: 'B2C', status: 'ACTIVE', favoriteProduct: '' }); 
+        await refreshData(); 
+      }
   };
 
   const handleAddSupplier = async (e: React.FormEvent) => {
@@ -230,8 +244,6 @@ const FinancePage: React.FC<FinanceProps> = ({ allowedTabs = ['procurement', 'sa
   const handleOpenDocument = (sale: SalesRecord, type: DocumentType) => { setSelectedSale(sale); setViewDocType(type); };
 
   const handleResolveComplaint = async (id: string, resolution: string) => {
-    // If resolution is "Refund processed", the prompt requests the UI show "CANCELLED".
-    // sheetService resolveComplaint currently sets status to "RESOLVED"
     await resolveComplaint(id, resolution);
     refreshData();
   };
@@ -333,7 +345,7 @@ const FinancePage: React.FC<FinanceProps> = ({ allowedTabs = ['procurement', 'sa
               {lowStockItems.length > 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-[2rem] p-8 flex items-center justify-between shadow-sm">
                     <div className="flex items-center gap-6"><div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center"><AlertTriangle size={32} strokeWidth={2.5} /></div><div><h3 className="text-red-900 font-black text-xl mb-1 uppercase tracking-tight">URGENT: Low Stock Alert</h3><ul className="space-y-1">{lowStockItems.map(item => (<li key={item.id} className="text-red-700 font-bold flex items-center"><span className="w-1.5 h-1.5 bg-red-700 rounded-full mr-2"></span>{item.name}: {item.quantity} {item.unit} left</li>))}</ul></div></div>
-                    <button onClick={() => { setPoItem(lowStockItems[0].id); setShowOrderModal(true); }} className="px-8 py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black flex items-center gap-3 shadow-xl shadow-red-200 transition-all"><ShoppingCart size={24} /> Reorder Now</button>
+                    <button onClick={() => { setPoItem(lowStockItems[0].id); setShowOrderModal(true); }} className="px-8 py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black shadow-xl shadow-red-200 transition-all"><ShoppingCart size={24} /> Reorder Now</button>
                 </div>
               )}
 
@@ -344,7 +356,7 @@ const FinancePage: React.FC<FinanceProps> = ({ allowedTabs = ['procurement', 'sa
               <div className="space-y-4"><h3 className="font-black text-slate-800 text-lg uppercase tracking-tight">Active Orders</h3>{purchaseOrders.filter(p => p.status === 'ORDERED').length === 0 ? (<div className="py-12 border-2 border-dashed border-slate-200 rounded-3xl text-center text-slate-400 font-bold">No pending orders.</div>) : (<div className="space-y-3">{purchaseOrders.filter(p => p.status === 'ORDERED').map(po => (<div key={po.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center group hover:border-blue-200 transition-all"><div className="flex items-center gap-4"><div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><Truck size={24} /></div><div><div className="flex items-center gap-2 mb-0.5"><span className="text-[10px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded uppercase tracking-widest">{po.supplier}</span><span className="text-[10px] text-slate-400 font-bold uppercase">{po.id}</span></div><h4 className="font-black text-slate-800 text-lg">{po.itemName}</h4><p className="text-sm text-slate-500 font-bold uppercase">{po.quantity} packs • RM {po.totalCost.toFixed(2)}</p></div></div><button onClick={() => setShowQCModal(po.id)} className="px-6 py-3 bg-nature-600 text-white rounded-xl font-black shadow-lg shadow-nature-100 hover:bg-nature-700 transition-all">Received</button></div>))}</div>)}</div>
 
               {/* --- PENDING COMPLAINTS --- */}
-              <div className="space-y-4"><h3 className="font-black text-red-800 text-lg uppercase tracking-tight flex items-center gap-2"><AlertTriangle size={20} /> Pending Complaints</h3>{purchaseOrders.filter(p => p.status === 'COMPLAINT').length === 0 ? (<div className="py-8 text-center text-slate-300 font-bold italic">No pending complaints.</div>) : (<div className="space-y-3">{purchaseOrders.filter(p => p.status === 'COMPLAINT').map(po => (<div key={po.id} className="bg-red-50/30 border border-red-100 rounded-2xl p-6 transition-all hover:bg-red-50/50"><div className="flex justify-between items-start mb-4"><div><div className="flex items-center gap-3 mb-2"><span className="text-[10px] font-black bg-white text-slate-500 border border-slate-200 px-2 py-1 rounded uppercase tracking-widest shadow-sm">{po.supplier}</span><span className="text-[10px] text-red-400 font-bold font-mono">#{po.id}</span></div><h4 className="text-xl font-black text-red-900 leading-tight">{po.itemName}</h4><div className="mt-2 inline-block px-3 py-1 bg-red-100/50 rounded-lg border border-red-200"><p className="text-xs text-red-700 font-black uppercase tracking-tight">Issue: {po.complaintReason}</p></div></div><div className="flex gap-2"><button onClick={() => handleResolveComplaint(po.id, 'Replacement received')} className="px-5 py-3 bg-white text-nature-700 border border-nature-200 rounded-xl font-black flex items-center gap-2 shadow-sm hover:bg-nature-50 transition-all"><RotateCcw size={18} /> Replacement</button><button onClick={() => handleResolveComplaint(po.id, 'Refund processed')} className="px-5 py-3 bg-white text-slate-700 border border-slate-200 rounded-xl font-black flex items-center gap-2 shadow-sm hover:bg-slate-50 transition-all"><FileMinus size={18} /> Refund</button></div></div></div>))}</div>)}</div>
+              <div className="space-y-4"><h3 className="font-black text-red-800 text-lg uppercase tracking-tight flex items-center gap-2"><AlertTriangle size={20} /> Pending Complaints</h3>{purchaseOrders.filter(p => p.status === 'COMPLAINT').length === 0 ? (<div className="py-8 text-center text-slate-300 font-bold italic">No pending complaints.</div>) : (<div className="space-y-3">{purchaseOrders.filter(p => p.status === 'COMPLAINT').map(po => (<div key={po.id} className="bg-red-50/30 border border-red-100 rounded-2xl p-6 transition-all hover:bg-red-50/50"><div className="flex justify-between items-start mb-4"><div><div className="flex items-center gap-3 mb-2"><span className="text-[10px] font-black bg-white text-slate-500 border border-slate-200 px-2 py-1 rounded uppercase tracking-widest shadow-sm">{po.supplier}</span><span className="text-[10px] text-red-400 font-bold font-mono">#{po.id}</span></div><h4 className="text-xl font-black text-red-900 leading-tight">{po.itemName}</h4><div className="mt-2 inline-block px-3 py-1 bg-red-100/50 rounded-lg border border-red-200"><p className="text-xs text-red-700 font-black uppercase tracking-tight">Issue: {po.complaintReason}</p></div></div><div className="flex gap-2"><button onClick={() => handleResolveComplaint(po.id, 'Replacement received')} className="px-5 py-3 bg-white text-nature-700 border border-nature-200 rounded-xl font-black flex items-center gap-2 shadow-sm hover:bg-nature-50 transition-all"><RotateCcw size={18} /> Replacement</button><button onClick={() => handleResolveComplaint(po.id, 'Refund processed')} className="px-5 py-3 bg-white text-slate-700 border border-nature-200 rounded-xl font-black flex items-center gap-2 shadow-sm hover:bg-slate-50 transition-all"><FileMinus size={18} /> Refund</button></div></div></div>))}</div>)}</div>
 
               {/* --- REDESIGNED ORDER HISTORY (MATCHES IMAGE) --- */}
               <div className="space-y-4">
@@ -416,7 +428,7 @@ const FinancePage: React.FC<FinanceProps> = ({ allowedTabs = ['procurement', 'sa
 
                       {viewingOrder.complaintReason && (
                           <div className="mt-8 p-6 bg-slate-50 border border-slate-100 rounded-[1.5rem] text-left">
-                              <div className="flex items-center gap-2 mb-3"><AlertTriangle size={14} className="text-orange-500" /><span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Incident Report</span></div>
+                              <div className="flex items-center gap-2 mb-3"><AlertTriangle size={14} className="text-orange-50" /><span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Incident Report</span></div>
                               <div className="space-y-3">
                                   <div><p className="text-[9px] font-black text-slate-400 uppercase mb-1">Issue Reported:</p><p className="text-red-500 font-bold text-sm">{viewingOrder.complaintReason}</p></div>
                                   <div><p className="text-[9px] font-black text-slate-400 uppercase mb-1">Resolution:</p><p className="text-nature-700 font-black text-sm uppercase">{viewingOrder.complaintResolution || 'Pending'}</p></div>
@@ -450,7 +462,57 @@ const FinancePage: React.FC<FinanceProps> = ({ allowedTabs = ['procurement', 'sa
       )}
 
       {showCustomerModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in"><div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-xl"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg flex items-center text-slate-800"><User className="mr-2 text-nature-600"/> Add New Customer</h3><button onClick={() => setShowCustomerModal(false)}><X size={20}/></button></div><form onSubmit={handleAddCustomer} className="space-y-3"><input required placeholder="Name" className="w-full p-2.5 border rounded-lg bg-slate-50 text-sm" value={newCustomer.name || ''} onChange={e => setNewCustomer({...newCustomer, name: e.target.value})} /><input required placeholder="Contact No." className="w-full p-2.5 border rounded-lg bg-slate-50 text-sm" value={newCustomer.contact || ''} onChange={e => setNewCustomer({...newCustomer, contact: e.target.value})} /><button type="submit" className="w-full py-3 bg-nature-600 text-white font-bold rounded-xl mt-4 shadow-lg hover:bg-nature-700 transition-all">Save Customer</button></form></div></div>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+              <div className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl overflow-y-auto max-h-[90vh]">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="font-black text-xl flex items-center text-slate-800"><User className="mr-2 text-nature-600"/> New Customer Profile</h3>
+                      <button onClick={() => setShowCustomerModal(false)}><X size={24} className="text-slate-400"/></button>
+                  </div>
+                  <form onSubmit={handleAddCustomer} className="space-y-5">
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Full Name</label>
+                          <input required placeholder="Full Name" className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500 transition-all text-sm" value={newCustomer.name || ''} onChange={e => setNewCustomer({...newCustomer, name: e.target.value})} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email Address</label>
+                              <input required type="email" placeholder="Email" className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500 transition-all text-sm" value={newCustomer.email || ''} onChange={e => setNewCustomer({...newCustomer, email: e.target.value})} />
+                          </div>
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Phone Number</label>
+                              <input required placeholder="Contact No." className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500 transition-all text-sm" value={newCustomer.contact || ''} onChange={e => setNewCustomer({...newCustomer, contact: e.target.value})} />
+                          </div>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Delivery Address</label>
+                          <textarea rows={2} placeholder="Full address..." className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500 transition-all text-sm resize-none" value={newCustomer.address || ''} onChange={e => setNewCustomer({...newCustomer, address: e.target.value})} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Client Type</label>
+                            <select className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm" value={newCustomer.type} onChange={e => setNewCustomer({...newCustomer, type: e.target.value as any})}>
+                                <option value="B2C">Individual (B2C)</option>
+                                <option value="B2B">Business Partner (B2B)</option>
+                            </select>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Account Status</label>
+                            <select className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm" value={newCustomer.status} onChange={e => setNewCustomer({...newCustomer, status: e.target.value as any})}>
+                                <option value="ACTIVE">ACTIVE</option>
+                                <option value="INACTIVE">INACTIVE</option>
+                                <option value="VIP">VIP</option>
+                            </select>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Tags size={10}/> Favorite Product</label>
+                          <input placeholder="e.g. Grey Oyster Chips" className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500 transition-all text-sm" value={newCustomer.favoriteProduct || ''} onChange={e => setNewCustomer({...newCustomer, favoriteProduct: e.target.value})} />
+                      </div>
+                      <button type="submit" className="w-full py-4 bg-nature-600 text-white font-black rounded-xl mt-4 shadow-xl hover:bg-nature-700 transition-all">Save Customer Profile</button>
+                  </form>
+                  <button onClick={() => setShowCustomerModal(false)} className="mt-4 text-slate-400 font-bold text-center w-full hover:text-slate-600 transition-colors">Dismiss</button>
+              </div>
+          </div>
       )}
 
       {showSupplierModal && (
@@ -471,6 +533,92 @@ const FinancePage: React.FC<FinanceProps> = ({ allowedTabs = ['procurement', 'sa
 
       {showRateModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"><div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full"><div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg">System Rates</h3><button onClick={() => setShowRateModal(false)}><X size={20}/></button></div><div className="space-y-4"><div><label className="text-[10px] font-bold text-slate-500 uppercase">Raw Material Rate (RM/kg)</label><input type="number" className="w-full p-2 border rounded" value={rawRate} onChange={e => { setRawMaterialRate(parseFloat(e.target.value)); setRawMaterialRateState(parseFloat(e.target.value)); }} /></div><div><label className="text-[10px] font-bold text-slate-500 uppercase">Labor Rate (RM/hour)</label><input type="number" className="w-full p-2 border rounded" value={laborRate} onChange={e => { setLaborRate(parseFloat(e.target.value)); setLaborRateState(parseFloat(e.target.value)); }} /></div></div></div></div>
+      )}
+
+      {showReportModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in overflow-y-auto print:bg-white print:p-0">
+              <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col my-8 print:my-0 print:shadow-none print:max-w-none">
+                  <div className="p-8 bg-[#292524] text-white flex justify-between items-center print:bg-white print:text-black print:border-b print:border-slate-200">
+                      <div className="flex items-center gap-3">
+                          <div className="p-2 bg-nature-600 rounded-lg print:hidden">
+                              <FileText size={24} className="text-white" />
+                          </div>
+                          <div>
+                              <h3 className="text-2xl font-black tracking-tight">Executive Report</h3>
+                              <p className="text-slate-400 text-xs font-bold uppercase tracking-widest print:text-slate-600">{reportStats.startDate} - {reportStats.endDate}</p>
+                          </div>
+                      </div>
+                      <div className="flex gap-2 print:hidden">
+                          <div className="bg-white/10 rounded-xl p-1 flex gap-1 border border-white/10">
+                              <button onClick={() => setReportPeriod('WEEK')} className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${reportPeriod === 'WEEK' ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-400 hover:text-white'}`}>WEEK</button>
+                              <button onClick={() => setReportPeriod('MONTH')} className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${reportPeriod === 'MONTH' ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-400 hover:text-white'}`}>MONTH</button>
+                          </div>
+                          <button onClick={() => setShowReportModal(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X size={24} /></button>
+                      </div>
+                  </div>
+
+                  <div className="p-10 space-y-10 overflow-y-auto flex-1">
+                      {/* --- KEY PERFORMANCE --- */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <div className="p-6 bg-slate-50 border border-slate-100 rounded-3xl">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Total Revenue</p>
+                              <p className="text-3xl font-black text-nature-700">RM {reportStats.revenue.toFixed(2)}</p>
+                              <p className="text-[10px] text-slate-400 mt-2 font-bold">{reportStats.count} Paid Orders</p>
+                          </div>
+                          <div className="p-6 bg-slate-50 border border-slate-100 rounded-3xl">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Net Profit</p>
+                              <p className={`text-3xl font-black ${reportStats.profit >= 0 ? 'text-blue-700' : 'text-red-700'}`}>RM {reportStats.profit.toFixed(2)}</p>
+                              <p className="text-[10px] text-slate-400 mt-2 font-bold">{reportStats.margin.toFixed(1)}% Gross Margin</p>
+                          </div>
+                          <div className="p-6 bg-slate-50 border border-slate-100 rounded-3xl">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Avg Order Value</p>
+                              <p className="text-3xl font-black text-slate-800">RM {reportStats.aov.toFixed(2)}</p>
+                          </div>
+                      </div>
+
+                      {/* --- EXPENSE BREAKDOWN --- */}
+                      <div className="space-y-6">
+                          <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                              <TrendingUp size={14} /> Expenditure Breakdown
+                          </h4>
+                          <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                              <div className="p-6 space-y-4">
+                                  {[
+                                      { label: 'Raw Materials', val: reportStats.rawCost, color: 'bg-green-600' },
+                                      { label: 'Labor Costs', val: reportStats.laborCost, color: 'bg-blue-600' },
+                                      { label: 'Packaging / Logistics', val: reportStats.pkgCost, color: 'bg-nature-500' },
+                                      { label: 'Logged Wastage', val: reportStats.wasteCost, color: 'bg-red-500' },
+                                  ].map(ex => (
+                                      <div key={ex.label} className="space-y-2">
+                                          <div className="flex justify-between items-end">
+                                              <span className="text-sm font-bold text-slate-700">{ex.label}</span>
+                                              <span className="text-sm font-black text-slate-900">RM {ex.val.toFixed(2)}</span>
+                                          </div>
+                                          <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                              <div className={`h-full ${ex.color}`} style={{ width: `${reportStats.totalExp > 0 ? (ex.val / reportStats.totalExp) * 100 : 0}%` }}></div>
+                                          </div>
+                                      </div>
+                                  ))}
+                              </div>
+                              <div className="bg-slate-50 px-6 py-4 flex justify-between items-center border-t border-slate-100">
+                                  <span className="text-xs font-black text-slate-500 uppercase tracking-widest">Total Period Expenditure</span>
+                                  <span className="text-lg font-black text-slate-900">RM {reportStats.totalExp.toFixed(2)}</span>
+                              </div>
+                          </div>
+                      </div>
+
+                      {/* --- FOOTER / NOTES --- */}
+                      <div className="pt-6 border-t border-dashed border-slate-200">
+                          <p className="text-xs text-slate-400 italic">Report generated on {new Date().toLocaleString()}. Data reflects confirmed 'PAID' status revenue and logged production metrics.</p>
+                      </div>
+                  </div>
+
+                  <div className="p-8 bg-slate-50 border-t border-slate-200 flex justify-between gap-4 print:hidden">
+                      <button onClick={() => setShowReportModal(false)} className="px-8 py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black hover:bg-slate-100 transition-all">Dismiss</button>
+                      <button onClick={() => window.print()} className="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-black shadow-xl hover:bg-black flex items-center justify-center gap-2 transition-all"><Printer size={20} /> Export / Print Report</button>
+                  </div>
+              </div>
+          </div>
       )}
     </div>
   );

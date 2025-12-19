@@ -1,5 +1,5 @@
 {
-  "name": "Demo version 19/12/25 (v final final final)",
+  "name": "Demo version 19/12/25 (final version)",
   "description": "A mushroom processing, packing, and inventory management system integrated with Google Sheets workflows.",
   "requestFramePermissions": [
     "camera"

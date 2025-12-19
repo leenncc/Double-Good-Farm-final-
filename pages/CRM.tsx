@@ -278,7 +278,7 @@ const CRMPage: React.FC = () => {
 
       {showAddModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in">
-              <div className="bg-white p-8 rounded-3xl w-full max-w-sm shadow-2xl">
+              <div className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl overflow-y-auto max-h-[90vh]">
                   <h3 className="font-black text-xl mb-6 flex items-center gap-2">
                     <User className="text-nature-600" /> New Customer Profile
                   </h3>
@@ -290,12 +290,37 @@ const CRMPage: React.FC = () => {
                       <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1">
                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email</label>
-                              <input required className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500 transition-all" value={newCustomer.email || ''} onChange={e => setNewCustomer({...newCustomer, email: e.target.value})} />
+                              <input required type="email" className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500 transition-all" value={newCustomer.email || ''} onChange={e => setNewCustomer({...newCustomer, email: e.target.value})} />
                           </div>
                           <div className="space-y-1">
                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Phone</label>
                               <input required className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500 transition-all" value={newCustomer.contact || ''} onChange={e => setNewCustomer({...newCustomer, contact: e.target.value})} />
                           </div>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Delivery Address</label>
+                          <textarea rows={2} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500 resize-none" placeholder="Enter full address..." value={newCustomer.address || ''} onChange={e => setNewCustomer({...newCustomer, address: e.target.value})} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Client Type</label>
+                            <select className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none" value={newCustomer.type} onChange={e => setNewCustomer({...newCustomer, type: e.target.value as any})}>
+                                <option value="B2C">Individual (B2C)</option>
+                                <option value="B2B">Business Partner (B2B)</option>
+                            </select>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Account Status</label>
+                            <select className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none" value={newCustomer.status} onChange={e => setNewCustomer({...newCustomer, status: e.target.value as any})}>
+                                <option value="ACTIVE">ACTIVE</option>
+                                <option value="INACTIVE">INACTIVE</option>
+                                <option value="VIP">VIP</option>
+                            </select>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Tags size={10}/> Favorite Product</label>
+                          <input className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500" placeholder="e.g. Grey Oyster Chips" value={newCustomer.favoriteProduct || ''} onChange={e => setNewCustomer({...newCustomer, favoriteProduct: e.target.value})} />
                       </div>
                       <button className="w-full py-4 bg-earth-800 text-white font-black rounded-xl mt-4 shadow-xl hover:bg-black transition-all">Create Profile</button>
                   </form>
