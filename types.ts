@@ -1,3 +1,4 @@
+
 export enum UserRole {
   PROCESSING_WORKER = 'Processing Worker',
   PACKING_STAFF = 'Packing Staff',
@@ -140,6 +141,7 @@ export interface Customer {
   status?: 'ACTIVE' | 'INACTIVE' | 'VIP';
   notes?: string;
   joinDate?: string;
+  favoriteProduct?: string;
 }
 
 export type SalesStatus = 'QUOTATION' | 'INVOICED' | 'SHIPPED' | 'PAID' | 'DELIVERED' | 'CANCELLED';

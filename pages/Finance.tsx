@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useMemo } from 'react';
 import { 
     getFinishedGoods, getInventory, getPurchaseOrders, createPurchaseOrder, 
@@ -180,7 +179,8 @@ const FinancePage: React.FC<FinanceProps> = ({ allowedTabs = ['procurement', 'sa
       setUpdatingId(sale.id);
       try {
           const res = await updateSaleStatus(sale.id, newStatus as SalesStatus);
-          if (res.success && res.data) {
+          // FIX: Changed check from (res.success && res.data) to (res.success) to align with backend return
+          if (res.success) {
               setSales(prev => prev.map(s => s.id === sale.id ? { ...s, status: newStatus as SalesStatus } : s));
               if (selectedSale?.id === sale.id) setSelectedSale({ ...selectedSale, status: newStatus as SalesStatus });
               if (newStatus === 'INVOICED') setViewDocType('INVOICE');

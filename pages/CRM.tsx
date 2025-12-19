@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getCustomers, getCustomerStats, updateCustomer, addCustomer } from '../services/sheetService';
 import { Customer } from '../types';
-import { Users, Building2, User, Phone, Mail, Star, Clock, ShoppingBag, MessageCircle, Search, Plus, Wallet, ArrowRight, Pencil, X, ArrowLeft, Calendar, FileText, Printer, ChevronRight } from 'lucide-react';
+import { Users, Building2, User, Phone, Mail, Star, Clock, ShoppingBag, MessageCircle, Search, Plus, Wallet, ArrowRight, Pencil, X, ArrowLeft, Calendar, FileText, Printer, ChevronRight, Tags } from 'lucide-react';
 
 const CRMPage: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -30,8 +30,19 @@ const CRMPage: React.FC = () => {
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await addCustomer({ id: `cust-${Date.now()}`, name: newCustomer.name || 'Unknown', email: newCustomer.email || '', contact: newCustomer.contact || '', address: newCustomer.address || '', type: newCustomer.type as 'B2B' | 'B2C' || 'B2C', status: 'ACTIVE', joinDate: new Date().toISOString() } as Customer);
+    await addCustomer({ 
+        id: `cust-${Date.now()}`, 
+        name: newCustomer.name || 'Unknown', 
+        email: newCustomer.email || '', 
+        contact: newCustomer.contact || '', 
+        address: newCustomer.address || '', 
+        type: newCustomer.type as 'B2B' | 'B2C' || 'B2C', 
+        status: newCustomer.status as 'ACTIVE' | 'INACTIVE' | 'VIP' || 'ACTIVE', 
+        joinDate: new Date().toISOString(),
+        favoriteProduct: newCustomer.favoriteProduct || ''
+    } as Customer);
     setShowAddModal(false);
+    setNewCustomer({ type: 'B2C', status: 'ACTIVE' });
     loadData();
   };
 
@@ -42,7 +53,11 @@ const CRMPage: React.FC = () => {
 
   const handleUpdateSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (editingCustomer.id) { await updateCustomer(editingCustomer.id, editingCustomer); setShowEditModal(false); loadData(); }
+      if (editingCustomer.id) { 
+          await updateCustomer(editingCustomer.id, editingCustomer); 
+          setShowEditModal(false); 
+          loadData(); 
+      }
   };
 
   const sendWhatsApp = (phone: string, name: string, type: 'PROMO' | 'UPDATE') => {
@@ -77,11 +92,14 @@ const CRMPage: React.FC = () => {
             {filteredCustomers.map(c => (
                 <div key={c.id} onClick={() => setSelectedId(c.id)} className={`p-3 rounded-xl border cursor-pointer transition-all hover:bg-slate-50 ${selectedId === c.id ? 'bg-earth-50 border-earth-300' : 'bg-white border-transparent'}`}>
                     <div className="flex justify-between items-start">
-                      <div>
-                        <h4 className="font-black text-slate-800 text-sm">{c.name}</h4>
+                      <div className="min-w-0">
+                        <h4 className="font-black text-slate-800 text-sm truncate">{c.name}</h4>
                         <p className="text-xs text-slate-400 truncate mt-0.5">{c.email}</p>
                       </div>
-                      <span className="text-[9px] font-black px-2 py-0.5 rounded border uppercase bg-slate-50 text-slate-500 border-slate-200">{c.type || 'B2C'}</span>
+                      <div className="flex flex-col items-end gap-1">
+                          <span className="text-[9px] font-black px-2 py-0.5 rounded border uppercase bg-slate-50 text-slate-500 border-slate-200">{c.type || 'B2C'}</span>
+                          {c.status === 'VIP' && <span className="text-[8px] font-black px-1.5 bg-amber-100 text-amber-600 rounded">VIP</span>}
+                      </div>
                     </div>
                 </div>
             ))}
@@ -91,7 +109,7 @@ const CRMPage: React.FC = () => {
       <div className={`flex-1 bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col ${selectedId ? 'flex' : 'hidden lg:flex'}`}>
           {selectedCustomer ? (
               <div className="flex flex-col h-full bg-white">
-                  {/* --- REDESIGNED HEADER (MATCHES SCREENSHOT) --- */}
+                  {/* --- REDESIGNED HEADER --- */}
                   <div className="bg-[#292524] p-8 text-white relative">
                       <button onClick={() => setSelectedId(null)} className="absolute top-4 left-4 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full lg:hidden backdrop-blur-sm z-10 transition-all"><ArrowLeft size={20} /></button>
                       
@@ -113,10 +131,12 @@ const CRMPage: React.FC = () => {
                                   <Pencil size={20} />
                               </button>
                               <div className="flex flex-col items-end">
-                                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Customer Type</span>
+                                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Status & Type</span>
                                   <div className="flex items-center gap-2">
-                                      <Building2 className="text-slate-300" size={24} />
-                                      <span className="text-2xl font-black">{selectedCustomer.type === 'B2B' ? 'Business Partner' : 'Retail Customer'}</span>
+                                      <div className={`w-3 h-3 rounded-full ${selectedCustomer.status === 'ACTIVE' ? 'bg-green-500' : selectedCustomer.status === 'VIP' ? 'bg-amber-500' : 'bg-slate-500'}`}></div>
+                                      <span className="text-2xl font-black">{selectedCustomer.status || 'ACTIVE'}</span>
+                                      <span className="text-slate-500 mx-1">/</span>
+                                      <span className="text-lg font-bold text-slate-400">{selectedCustomer.type === 'B2B' ? 'B2B' : 'Retail'}</span>
                                   </div>
                               </div>
                           </div>
@@ -144,7 +164,9 @@ const CRMPage: React.FC = () => {
                               <Star size={14} className="opacity-60" />
                               <span className="text-[10px] font-black uppercase tracking-widest">Favorite</span>
                           </div>
-                          <p className="text-lg font-black text-slate-800 truncate">{stats?.favoriteProduct || 'None'}</p>
+                          <p className="text-lg font-black text-slate-800 truncate" title={selectedCustomer.favoriteProduct || stats?.favoriteProduct || 'None'}>
+                              {selectedCustomer.favoriteProduct || stats?.favoriteProduct || 'None'}
+                          </p>
                       </div>
                       <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-100 flex flex-col gap-2 transition-all hover:shadow-sm">
                           <div className="flex items-center gap-2 text-slate-400">
@@ -206,13 +228,14 @@ const CRMPage: React.FC = () => {
                                       <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                           <th className="px-6 py-4">Date</th>
                                           <th className="px-6 py-4">Invoice</th>
+                                          <th className="px-6 py-4">Items Purchased</th>
                                           <th className="px-6 py-4">Total</th>
                                           <th className="px-6 py-4 text-center">Status</th>
                                       </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-50">
                                       {!stats || stats?.salesHistory?.length === 0 ? (
-                                          <tr><td colSpan={4} className="p-8 text-center text-slate-300 font-bold italic">No history found.</td></tr>
+                                          <tr><td colSpan={5} className="p-8 text-center text-slate-300 font-bold italic">No history found.</td></tr>
                                       ) : (
                                           stats.salesHistory.map((sale: any) => (
                                               <tr key={sale.id} className="hover:bg-slate-50/50 transition-colors">
@@ -221,6 +244,11 @@ const CRMPage: React.FC = () => {
                                                   </td>
                                                   <td className="px-6 py-4 text-xs font-mono font-bold text-slate-400 uppercase">
                                                       #{sale.invoiceId || sale.id.slice(-6)}
+                                                  </td>
+                                                  <td className="px-6 py-4 text-xs text-slate-600 font-medium">
+                                                      <div className="max-w-[200px] truncate">
+                                                        {sale.items?.map((i: any) => `${i.quantity}x ${i.recipeName}`).join(', ') || 'No details'}
+                                                      </div>
                                                   </td>
                                                   <td className="px-6 py-4 text-sm font-black text-slate-800">
                                                       RM {sale.totalAmount.toFixed(2)}
@@ -278,21 +306,50 @@ const CRMPage: React.FC = () => {
 
       {showEditModal && editingCustomer && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in">
-              <div className="bg-white p-8 rounded-3xl w-full max-w-sm shadow-2xl">
+              <div className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl overflow-y-auto max-h-[90vh]">
                   <div className="flex justify-between items-center mb-6"><h3 className="font-black text-xl">Edit Profile</h3><button onClick={() => setShowEditModal(false)}><X size={24} className="text-slate-400"/></button></div>
-                  <form onSubmit={handleUpdateSubmit} className="space-y-4">
+                  <form onSubmit={handleUpdateSubmit} className="space-y-5">
                       <div className="space-y-1">
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Name</label>
                           <input required className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500" value={editingCustomer.name || ''} onChange={e => setEditingCustomer({...editingCustomer, name: e.target.value})} />
                       </div>
-                      <div className="space-y-1">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Client Type</label>
-                          <select className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none" value={editingCustomer.type} onChange={e => setEditingCustomer({...editingCustomer, type: e.target.value as any})}>
-                              <option value="B2C">Individual (B2C)</option>
-                              <option value="B2B">Business Partner (B2B)</option>
-                          </select>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email Address</label>
+                              <input type="email" className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500" value={editingCustomer.email || ''} onChange={e => setEditingCustomer({...editingCustomer, email: e.target.value})} />
+                          </div>
+                          <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Phone Number</label>
+                              <input type="text" className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500" value={editingCustomer.contact || ''} onChange={e => setEditingCustomer({...editingCustomer, contact: e.target.value})} />
+                          </div>
                       </div>
-                      <button className="w-full py-4 bg-nature-600 text-white font-black rounded-xl mt-4 shadow-xl hover:bg-nature-700 transition-all">Update Database</button>
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Delivery Address</label>
+                          <textarea rows={2} className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500 resize-none" value={editingCustomer.address || ''} onChange={e => setEditingCustomer({...editingCustomer, address: e.target.value})} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Client Type</label>
+                            <select className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none" value={editingCustomer.type} onChange={e => setEditingCustomer({...editingCustomer, type: e.target.value as any})}>
+                                <option value="B2C">Individual (B2C)</option>
+                                <option value="B2B">Business Partner (B2B)</option>
+                            </select>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Account Status</label>
+                            <select className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none" value={editingCustomer.status} onChange={e => setEditingCustomer({...editingCustomer, status: e.target.value as any})}>
+                                <option value="ACTIVE">ACTIVE</option>
+                                <option value="INACTIVE">INACTIVE</option>
+                                <option value="VIP">VIP</option>
+                            </select>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Tags size={10}/> Favorite Product (Manual)</label>
+                          <input className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-nature-500" placeholder="e.g. Grey Oyster Chips" value={editingCustomer.favoriteProduct || ''} onChange={e => setEditingCustomer({...editingCustomer, favoriteProduct: e.target.value})} />
+                          <p className="text-[9px] text-slate-400 italic">Overrides auto-calculated favorite in profile view.</p>
+                      </div>
+                      <button className="w-full py-4 bg-nature-600 text-white font-black rounded-xl mt-2 shadow-xl hover:bg-nature-700 transition-all">Update Database</button>
                   </form>
               </div>
           </div>
