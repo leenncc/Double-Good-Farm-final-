@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Demo version 19/12/25 (testing)",
+  "description": "A mushroom processing, packing, and inventory management system integrated with Google Sheets workflows.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
