@@ -111,26 +111,68 @@ export const getSales = async (forceRemote = false): Promise<ApiResponse<SalesRe
   } catch (e) { return { success: true, data: mockSales }; }
 };
 
+/**
+ * createSale (FIXED):
+ * 1. Deducts inventory from finished_goods record.
+ * 2. Enriches items with recipeName and packagingType to fix POS display issues.
+ */
 export const createSale = async (customerId: string, items: any[], paymentMethod: PaymentMethod, initialStatus: SalesStatus = 'INVOICED'): Promise<ApiResponse<SalesRecord>> => {
-  const customerRes = await getCustomers();
-  const customer = (customerRes.data || []).find(c => c.id === customerId);
-  
-  const newSale: SalesRecord = {
-    id: `SALE-${Date.now()}`,
-    invoiceId: `INV-${Math.floor(Math.random() * 100000)}`,
-    customerId,
-    customerName: customer ? customer.name : 'Unknown',
-    items,
-    totalAmount: items.reduce((sum, i) => sum + (i.quantity * i.unitPrice), 0),
-    paymentMethod,
-    status: initialStatus,
-    dateCreated: new Date().toISOString()
-  };
+  try {
+    const customerRes = await getCustomers();
+    const customer = (customerRes.data || []).find(c => c.id === customerId);
+    
+    // Fetch finished goods for enrichment and verification
+    const goodsRes = await getFinishedGoods();
+    const allGoods = goodsRes.data || [];
 
-  await db.collection('sales').doc(newSale.id).set(cleanFirestoreData(newSale));
-  return { success: true, data: newSale };
+    // Enrich items with full metadata for reliable display in UI
+    const enrichedItems = items.map(sellItem => {
+        const detail = allGoods.find(g => g.id === sellItem.finishedGoodId);
+        return {
+          finishedGoodId: sellItem.finishedGoodId,
+          recipeName: detail?.recipeName || 'Product',
+          packagingType: detail?.packagingType || 'N/A',
+          quantity: sellItem.quantity,
+          unitPrice: sellItem.unitPrice
+        };
+    });
+
+    // Step 1: Inventory Deduction
+    const deductionPromises = items.map(item => 
+      db.collection('finished_goods').doc(item.finishedGoodId).update({
+        quantity: firebase.firestore.FieldValue.increment(-item.quantity)
+      })
+    );
+
+    // Step 2: Create Sale Record
+    const newSale: SalesRecord = {
+      id: `SALE-${Date.now()}`,
+      invoiceId: `INV-${Math.floor(Math.random() * 100000)}`,
+      customerId,
+      customerName: customer ? customer.name : 'Unknown',
+      items: enrichedItems,
+      totalAmount: enrichedItems.reduce((sum, i) => sum + (i.quantity * i.unitPrice), 0),
+      paymentMethod,
+      status: initialStatus,
+      dateCreated: new Date().toISOString()
+    };
+
+    await Promise.all([
+      ...deductionPromises,
+      db.collection('sales').doc(newSale.id).set(cleanFirestoreData(newSale))
+    ]);
+
+    return { success: true, data: newSale };
+  } catch (error: any) {
+    return { success: false, message: error.message };
+  }
 };
 
+/**
+ * submitOnlineOrder (FIXED):
+ * 1. Automatically links to CRM.
+ * 2. Deducts quantity from finished_goods inventory.
+ */
 export const submitOnlineOrder = async (customerName: string, customerPhone: string, customerEmail: string, customerAddress: string, cartItems: { item: FinishedGood, qty: number }[]): Promise<ApiResponse<string>> => {
     const newSaleId = `ORDER-${Date.now()}`;
     let customerId = 'GUEST';
@@ -175,6 +217,14 @@ export const submitOnlineOrder = async (customerName: string, customerPhone: str
         }
     } catch (e) { console.error("CRM Auto-link error:", e); }
 
+    // Step 1: Inventory Deduction
+    const deductionPromises = cartItems.map(c => 
+        db.collection('finished_goods').doc(c.item.id).update({
+            quantity: firebase.firestore.FieldValue.increment(-c.qty)
+        })
+    );
+
+    // Step 2: Prepare Sale Record
     const saleRecord: SalesRecord = {
         id: newSaleId, invoiceId: `WEB-${Math.floor(Math.random() * 10000)}`, 
         customerId, customerName, customerPhone, customerEmail, shippingAddress: customerAddress, 
@@ -187,7 +237,10 @@ export const submitOnlineOrder = async (customerName: string, customerPhone: str
     };
     
     try { 
-        await db.collection('sales').doc(newSaleId).set(cleanFirestoreData(saleRecord)); 
+        await Promise.all([
+            ...deductionPromises,
+            db.collection('sales').doc(newSaleId).set(cleanFirestoreData(saleRecord))
+        ]);
         return { success: true, data: saleRecord.invoiceId }; 
     } catch (e: any) { return { success: false, message: e.message }; }
 };
