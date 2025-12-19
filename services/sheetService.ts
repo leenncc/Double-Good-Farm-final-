@@ -457,7 +457,7 @@ export const createBatch = async (farm: string, raw: number, spoiled: number, fa
  * packRecipeFIFO (MODIFIED):
  * 1. Correctly deducts raw material weight using FIFO logic.
  * 2. Archives (disappears) empty batches.
- * 3. Logs COGS (Raw Materials + Packaging) at the point of packing.
+ * 3. Logs COGS (Raw Materials + Packaging + Labor) at the point of packing.
  */
 export const packRecipeFIFO = async (recipeName: string, totalWeightToPack: number, packCount: number, packagingType: 'TIN' | 'POUCH'): Promise<ApiResponse<void>> => {
     try {
@@ -465,6 +465,7 @@ export const packRecipeFIFO = async (recipeName: string, totalWeightToPack: numb
         const invRes = await getInventory();
         const inventory = invRes.data || [];
         const rawRate = getRawMaterialRate();
+        const laborRate = getLaborRate();
 
         // 1. Identify Packaging & Labels in Inventory
         const pkgItem = inventory.find(i => i.subtype === packagingType || (i.name && i.name.toUpperCase().includes(packagingType.toUpperCase())));
@@ -475,6 +476,7 @@ export const packRecipeFIFO = async (recipeName: string, totalWeightToPack: numb
 
         // 2. FIFO Batch Weight Deduction
         let remainingToDeduct = totalWeightToPack;
+        let totalProcessingHours = 0;
         const relevantBatches = (batchRes.data || [])
             .filter(b => (b.selectedRecipeName === recipeName || b.recipeType === recipeName) && 
                          (b.status === BatchStatus.DRYING_COMPLETE || b.status === BatchStatus.PACKED) &&
@@ -490,6 +492,12 @@ export const packRecipeFIFO = async (recipeName: string, totalWeightToPack: numb
             const newRemaining = Math.max(0, currentAvail - deduction);
             remainingToDeduct -= deduction;
 
+            // Track labor hours (Default to 2 hours if no config exists per requirement)
+            const hours = batch.processConfig 
+                ? (batch.processConfig.totalDurationSeconds / 3600) 
+                : 2;
+            totalProcessingHours += hours;
+
             batchUpdates.push(db.collection('batches').doc(batch.id).update({
                 remainingWeightKg: newRemaining,
                 status: newRemaining <= 0.001 ? BatchStatus.PACKED : batch.status,
@@ -504,18 +512,19 @@ export const packRecipeFIFO = async (recipeName: string, totalWeightToPack: numb
         const labelUnitCost = (labelItem.unitCost || 0) / (labelItem.packSize || 1);
         const totalPackingCost = packCount * (pkgUnitCost + labelUnitCost);
         const totalRawMaterialUsedCost = totalWeightToPack * rawRate;
+        const totalLaborCost = totalProcessingHours * laborRate;
 
         const costEntry: DailyCostMetrics = {
             id: `COST-PACK-${Date.now()}`,
             referenceId: `PK-${recipeName}-${Date.now()}`,
             date: new Date().toISOString(),
             weightProcessed: totalWeightToPack,
-            processingHours: 0,
+            processingHours: totalProcessingHours,
             rawMaterialCost: totalRawMaterialUsedCost,
             packagingCost: totalPackingCost,
             wastageCost: 0,
-            laborCost: 0, // Labor for processing already logged in updateBatchStatus
-            totalCost: totalRawMaterialUsedCost + totalPackingCost
+            laborCost: totalLaborCost,
+            totalCost: totalRawMaterialUsedCost + totalPackingCost + totalLaborCost
         };
 
         // 4. Batch Operations: Execute Firestore Updates
