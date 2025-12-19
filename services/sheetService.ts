@@ -440,9 +440,37 @@ export const complaintPurchaseOrder = async (id: string, reason: string) => {
     return { success: true };
 };
 
-export const resolveComplaint = async (id: string, res: string) => {
-    await db.collection('purchase_orders').doc(id).update({ status: 'RESOLVED', complaintResolution: res });
-    return { success: true };
+/**
+ * resolveComplaint (FIXED):
+ * 1. Mark status as RESOLVED.
+ * 2. If the resolution mentions 'Replacement', automatically increment inventory stock for that item.
+ */
+export const resolveComplaint = async (id: string, res: string): Promise<ApiResponse<void>> => {
+    try {
+        const poRef = db.collection('purchase_orders').doc(id);
+        const poSnap = await poRef.get();
+        if (!poSnap.exists) return { success: false, message: 'Order record not found' };
+        
+        const po = poSnap.data() as PurchaseOrder;
+
+        // Inventory update logic for replacements
+        if (res.toLowerCase().includes('replacement')) {
+            const invRef = db.collection('inventory').doc(po.itemId);
+            await invRef.update({
+                quantity: firebase.firestore.FieldValue.increment(po.totalUnits)
+            });
+        }
+
+        // Finalize PO update
+        await poRef.update({ 
+            status: 'RESOLVED', 
+            complaintResolution: res 
+        });
+
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
 };
 
 export const getMonthlyBudget = async (m: string) => {
