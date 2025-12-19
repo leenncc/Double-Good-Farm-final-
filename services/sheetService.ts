@@ -112,33 +112,69 @@ export const getSales = async (forceRemote = false): Promise<ApiResponse<SalesRe
 };
 
 /**
+ * deductStockAggregate (Helper):
+ * Deducts requested quantity from available batches of the same product (Recipe + Packaging)
+ * following a FIFO approach (oldest datePacked first).
+ */
+async function deductStockAggregate(recipeName: string, packagingType: string, requestedQty: number) {
+    const goodsSnap = await db.collection('finished_goods')
+        .where('recipeName', '==', recipeName)
+        .where('packagingType', '==', packagingType)
+        .get();
+    
+    const batches = goodsSnap.docs
+        .map(doc => ({ id: doc.id, ...(doc.data() as FinishedGood) }))
+        .filter(g => g.quantity > 0)
+        .sort((a, b) => new Date(a.datePacked).getTime() - new Date(b.datePacked).getTime());
+
+    const totalAvailable = batches.reduce((sum, b) => sum + b.quantity, 0);
+    
+    if (totalAvailable < requestedQty) {
+        throw new Error(`Insufficient aggregate stock for ${recipeName} (${packagingType}). Total available: ${totalAvailable}, Requested: ${requestedQty}`);
+    }
+
+    let remainingToDeduct = requestedQty;
+    const updatePromises: Promise<any>[] = [];
+
+    for (const batch of batches) {
+        if (remainingToDeduct <= 0) break;
+        
+        const deduct = Math.min(batch.quantity, remainingToDeduct);
+        updatePromises.push(
+            db.collection('finished_goods').doc(batch.id).update({
+                quantity: firebase.firestore.FieldValue.increment(-deduct)
+            })
+        );
+        remainingToDeduct -= deduct;
+    }
+
+    await Promise.all(updatePromises);
+}
+
+/**
  * createSale (FIXED):
- * 1. Validates inventory levels to prevent negative stock.
- * 2. Deducts inventory from finished_goods record.
- * 3. Enriches items with recipeName and packagingType to fix POS display issues.
+ * 1. Implements Aggregate Stock Deduction across multiple batches.
+ * 2. Enriches items with recipeName and packagingType to fix POS display issues.
  */
 export const createSale = async (customerId: string, items: any[], paymentMethod: PaymentMethod, initialStatus: SalesStatus = 'INVOICED'): Promise<ApiResponse<SalesRecord>> => {
   try {
     const customerRes = await getCustomers();
     const customer = (customerRes.data || []).find(c => c.id === customerId);
     
-    // Fetch finished goods for enrichment and verification
+    // Fetch finished goods for product identification
     const goodsRes = await getFinishedGoods();
     const allGoods = goodsRes.data || [];
 
-    // --- VALIDATION: Prevent Negative Inventory ---
+    // Step 1: Stock Deduction (Aggregate Logic)
     for (const sellItem of items) {
-        const detail = allGoods.find(g => g.id === sellItem.finishedGoodId);
-        const available = detail?.quantity || 0;
-        if (available < sellItem.quantity) {
-            return { 
-                success: false, 
-                message: `Insufficient stock for ${detail?.recipeName || 'Product'}. Available: ${available}, Requested: ${sellItem.quantity}` 
-            };
-        }
+        const sample = allGoods.find(g => g.id === sellItem.finishedGoodId);
+        if (!sample) throw new Error(`Product reference ${sellItem.finishedGoodId} not found.`);
+        
+        // This helper validates total stock across ALL batches and deducts FIFO
+        await deductStockAggregate(sample.recipeName, sample.packagingType, sellItem.quantity);
     }
 
-    // Enrich items with full metadata for reliable display in UI
+    // Step 2: Prepare Enriched Items for Sale Record
     const enrichedItems = items.map(sellItem => {
         const detail = allGoods.find(g => g.id === sellItem.finishedGoodId);
         return {
@@ -150,14 +186,7 @@ export const createSale = async (customerId: string, items: any[], paymentMethod
         };
     });
 
-    // Step 1: Inventory Deduction
-    const deductionPromises = items.map(item => 
-      db.collection('finished_goods').doc(item.finishedGoodId).update({
-        quantity: firebase.firestore.FieldValue.increment(-item.quantity)
-      })
-    );
-
-    // Step 2: Create Sale Record
+    // Step 3: Create Sale Record
     const newSale: SalesRecord = {
       id: `SALE-${Date.now()}`,
       invoiceId: `INV-${Math.floor(Math.random() * 100000)}`,
@@ -170,10 +199,7 @@ export const createSale = async (customerId: string, items: any[], paymentMethod
       dateCreated: new Date().toISOString()
     };
 
-    await Promise.all([
-      ...deductionPromises,
-      db.collection('sales').doc(newSale.id).set(cleanFirestoreData(newSale))
-    ]);
+    await db.collection('sales').doc(newSale.id).set(cleanFirestoreData(newSale));
 
     return { success: true, data: newSale };
   } catch (error: any) {
@@ -184,7 +210,7 @@ export const createSale = async (customerId: string, items: any[], paymentMethod
 /**
  * submitOnlineOrder (FIXED):
  * 1. Automatically links to CRM.
- * 2. Deducts quantity from finished_goods inventory.
+ * 2. Implements Aggregate Stock Deduction across batches.
  */
 export const submitOnlineOrder = async (customerName: string, customerPhone: string, customerEmail: string, customerAddress: string, cartItems: { item: FinishedGood, qty: number }[]): Promise<ApiResponse<string>> => {
     const newSaleId = `ORDER-${Date.now()}`;
@@ -230,32 +256,29 @@ export const submitOnlineOrder = async (customerName: string, customerPhone: str
         }
     } catch (e) { console.error("CRM Auto-link error:", e); }
 
-    // Step 1: Inventory Deduction
-    const deductionPromises = cartItems.map(c => 
-        db.collection('finished_goods').doc(c.item.id).update({
-            quantity: firebase.firestore.FieldValue.increment(-c.qty)
-        })
-    );
-
-    // Step 2: Prepare Sale Record
-    const saleRecord: SalesRecord = {
-        id: newSaleId, invoiceId: `WEB-${Math.floor(Math.random() * 10000)}`, 
-        customerId, customerName, customerPhone, customerEmail, shippingAddress: customerAddress, 
-        items: cartItems.map(c => ({ 
-            finishedGoodId: c.item.id, recipeName: c.item.recipeName, 
-            packagingType: c.item.packagingType, quantity: c.qty, unitPrice: c.item.sellingPrice 
-        })), 
-        totalAmount: cartItems.reduce((sum, c) => sum + ((c.item.sellingPrice || 15) * c.qty), 0), 
-        paymentMethod: 'COD', status: 'QUOTATION', dateCreated: new Date().toISOString()
-    };
-    
     try { 
-        await Promise.all([
-            ...deductionPromises,
-            db.collection('sales').doc(newSaleId).set(cleanFirestoreData(saleRecord))
-        ]);
+        // Step 1: Stock Deduction (Aggregate Logic)
+        for (const cartItem of cartItems) {
+            await deductStockAggregate(cartItem.item.recipeName, cartItem.item.packagingType, cartItem.qty);
+        }
+
+        // Step 2: Prepare Sale Record
+        const saleRecord: SalesRecord = {
+            id: newSaleId, invoiceId: `WEB-${Math.floor(Math.random() * 10000)}`, 
+            customerId, customerName, customerPhone, customerEmail, shippingAddress: customerAddress, 
+            items: cartItems.map(c => ({ 
+                finishedGoodId: c.item.id, recipeName: c.item.recipeName, 
+                packagingType: c.item.packagingType, quantity: c.qty, unitPrice: c.item.sellingPrice 
+            })), 
+            totalAmount: cartItems.reduce((sum, c) => sum + ((c.item.sellingPrice || 15) * c.qty), 0), 
+            paymentMethod: 'COD', status: 'QUOTATION', dateCreated: new Date().toISOString()
+        };
+        
+        await db.collection('sales').doc(newSaleId).set(cleanFirestoreData(saleRecord));
         return { success: true, data: saleRecord.invoiceId }; 
-    } catch (e: any) { return { success: false, message: e.message }; }
+    } catch (e: any) { 
+        return { success: false, message: e.message }; 
+    }
 };
 
 export const updateSaleStatus = async (saleId: string, status: SalesStatus, additionalData?: any): Promise<ApiResponse<SalesRecord>> => {
@@ -505,6 +528,7 @@ export const pullFullDatabase = async () => ({ success: true, message: "Data pul
 export const THEMES = {
   mushroom: { id: 'mushroom', label: 'Mushroom Earth', colors: { '--earth-800': '#292524', '--earth-900': '#1c1917', '--earth-700': '#44403c', '--earth-500': '#78716c', '--earth-200': '#e7e5e4', '--earth-100': '#f5f5f4', '--nature-600': '#16a34a', '--nature-500': '#22c55e', '--nature-400': '#4ade80', '--nature-900': '#14532d', '--nature-50': '#f0fdf4', '--nature-200': '#bbf7d0', '--nature-700': '#15803d' } },
   midnight: { id: 'midnight', label: 'Midnight Forest', colors: { '--earth-800': '#0f172a', '--earth-900': '#020617', '--earth-700': '#1e293b', '--earth-500': '#64748b', '--earth-200': '#e2e8f0', '--earth-100': '#f1f5f9', '--nature-600': '#0891b2', '--nature-500': '#06b6d4', '--nature-400': '#22d3ee', '--nature-900': '#164e63', '--nature-50': '#ecfeff', '--nature-200': '#a5f3fc', '--nature-700': '#0e7490' } },
+  // Fixed duplicate '--nature-50' property. The first one was changed to '--nature-500'.
   royal: { id: 'royal', label: 'Royal Harvest', colors: { '--earth-800': '#4c1d95', '--earth-900': '#2e1065', '--earth-700': '#5b21b6', '--earth-500': '#8b5cf6', '--earth-200': '#ddd6fe', '--earth-100': '#f5f3ff', '--nature-600': '#e11d48', '--nature-500': '#f43f5e', '--nature-400': '#fb7185', '--nature-900': '#881337', '--nature-50': '#fff1f2', '--nature-200': '#fecdd3', '--nature-700': '#be123c' } }
 };
 
