@@ -113,8 +113,9 @@ export const getSales = async (forceRemote = false): Promise<ApiResponse<SalesRe
 
 /**
  * createSale (FIXED):
- * 1. Deducts inventory from finished_goods record.
- * 2. Enriches items with recipeName and packagingType to fix POS display issues.
+ * 1. Validates inventory levels to prevent negative stock.
+ * 2. Deducts inventory from finished_goods record.
+ * 3. Enriches items with recipeName and packagingType to fix POS display issues.
  */
 export const createSale = async (customerId: string, items: any[], paymentMethod: PaymentMethod, initialStatus: SalesStatus = 'INVOICED'): Promise<ApiResponse<SalesRecord>> => {
   try {
@@ -124,6 +125,18 @@ export const createSale = async (customerId: string, items: any[], paymentMethod
     // Fetch finished goods for enrichment and verification
     const goodsRes = await getFinishedGoods();
     const allGoods = goodsRes.data || [];
+
+    // --- VALIDATION: Prevent Negative Inventory ---
+    for (const sellItem of items) {
+        const detail = allGoods.find(g => g.id === sellItem.finishedGoodId);
+        const available = detail?.quantity || 0;
+        if (available < sellItem.quantity) {
+            return { 
+                success: false, 
+                message: `Insufficient stock for ${detail?.recipeName || 'Product'}. Available: ${available}, Requested: ${sellItem.quantity}` 
+            };
+        }
+    }
 
     // Enrich items with full metadata for reliable display in UI
     const enrichedItems = items.map(sellItem => {
@@ -536,9 +549,10 @@ export const createBatch = async (farm: string, raw: number, spoiled: number, fa
 
 /**
  * packRecipeFIFO (MODIFIED):
- * 1. Correctly deducts raw material weight using FIFO logic.
- * 2. Archives (disappears) empty batches.
- * 3. Logs COGS (Raw Materials + Packaging + Labor) at the point of packing.
+ * 1. Validates inventory levels to prevent negative stock.
+ * 2. Correctly deducts raw material weight using FIFO logic.
+ * 3. Archives (disappears) empty batches.
+ * 4. Logs COGS (Raw Materials + Packaging + Labor) at the point of packing.
  */
 export const packRecipeFIFO = async (recipeName: string, totalWeightToPack: number, packCount: number, packagingType: 'TIN' | 'POUCH'): Promise<ApiResponse<void>> => {
     try {
@@ -548,12 +562,15 @@ export const packRecipeFIFO = async (recipeName: string, totalWeightToPack: numb
         const rawRate = getRawMaterialRate();
         const laborRate = getLaborRate();
 
-        // 1. Identify Packaging & Labels in Inventory
+        // 1. Identify & Validate Packaging & Labels in Inventory
         const pkgItem = inventory.find(i => i.subtype === packagingType || (i.name && i.name.toUpperCase().includes(packagingType.toUpperCase())));
         const labelItem = inventory.find(i => i.type === 'LABEL' || i.subtype === 'STICKER' || (i.name && (i.name.toUpperCase().includes('LABEL') || i.name.toUpperCase().includes('STICKER'))));
 
-        if (!pkgItem || pkgItem.quantity < packCount) return { success: false, message: `Insufficient ${packagingType} inventory.` };
-        if (!labelItem || labelItem.quantity < packCount) return { success: false, message: 'Insufficient Labels inventory.' };
+        if (!pkgItem) return { success: false, message: `Missing ${packagingType} item in inventory.` };
+        if (pkgItem.quantity < packCount) return { success: false, message: `Insufficient ${packagingType} inventory. Have: ${pkgItem.quantity}, Need: ${packCount}` };
+        
+        if (!labelItem) return { success: false, message: 'Missing Labels/Stickers in inventory.' };
+        if (labelItem.quantity < packCount) return { success: false, message: `Insufficient Labels inventory. Have: ${labelItem.quantity}, Need: ${packCount}` };
 
         // 2. FIFO Batch Weight Deduction
         let remainingToDeduct = totalWeightToPack;
@@ -563,6 +580,12 @@ export const packRecipeFIFO = async (recipeName: string, totalWeightToPack: numb
                          (b.status === BatchStatus.DRYING_COMPLETE || b.status === BatchStatus.PACKED) &&
                          (b.remainingWeightKg ?? b.netWeightKg) > 0.001)
             .sort((a, b) => new Date(a.dateReceived).getTime() - new Date(b.dateReceived).getTime());
+
+        // Validate Total Available Batch Weight
+        const totalAvailWeight = relevantBatches.reduce((sum, b) => sum + (b.remainingWeightKg ?? b.netWeightKg), 0);
+        if (totalAvailWeight < totalWeightToPack) {
+            return { success: false, message: `Insufficient batch weight. Have: ${totalAvailWeight.toFixed(2)}kg, Need: ${totalWeightToPack.toFixed(2)}kg` };
+        }
 
         const batchUpdates: Promise<any>[] = [];
         for (const batch of relevantBatches) {
@@ -585,8 +608,6 @@ export const packRecipeFIFO = async (recipeName: string, totalWeightToPack: numb
                 packedDate: new Date().toISOString()
             }));
         }
-
-        if (remainingToDeduct > 0.1) return { success: false, message: `Weight mismatch: Missing ${remainingToDeduct.toFixed(2)}kg in batches.` };
 
         // 3. Finalize Costs (Packing Event = Expense Recognition)
         const pkgUnitCost = (pkgItem.unitCost || 0) / (pkgItem.packSize || 1);
