@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useMemo } from 'react';
 import { 
     getFinishedGoods, getInventory, getPurchaseOrders, createPurchaseOrder, 
@@ -129,11 +128,13 @@ const FinancePage: React.FC<FinanceProps> = ({ allowedTabs = ['procurement', 'sa
       return Array.from(map.values()).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [dailyCosts]);
 
-  const totalPackagingProcurement = purchaseOrders.filter(p => p.status === 'RECEIVED' || p.status === 'ORDERED').reduce((acc, p) => acc + p.totalCost, 0);
+  // UPDATED COST CALCULATIONS: Now pulling from usage/dailyCosts instead of procurement
+  const totalPackagingCost = dailyCosts.reduce((sum, item) => sum + (item.packagingCost || 0), 0);
   const totalRawMaterialCost = dailyCosts.reduce((acc, d) => acc + d.rawMaterialCost, 0);
   const totalLaborCost = dailyCosts.reduce((acc, d) => acc + d.laborCost, 0);
   const totalWastageCost = dailyCosts.reduce((acc, d) => acc + d.wastageCost, 0);
-  const totalOverallCost = totalPackagingProcurement + totalRawMaterialCost + totalLaborCost + totalWastageCost;
+  const totalOverallCost = totalPackagingCost + totalRawMaterialCost + totalLaborCost + totalWastageCost;
+
   const totalSalesRevenue = sales.filter(s => s.status === 'PAID').reduce((acc, s) => acc + s.totalAmount, 0);
   const netProfit = totalSalesRevenue - totalOverallCost;
   const avgCostPerUnit = finishedGoods.reduce((acc, i) => acc + i.quantity, 0) > 0 ? totalOverallCost / finishedGoods.reduce((acc, i) => acc + i.quantity, 0) : 0;
@@ -151,7 +152,7 @@ const FinancePage: React.FC<FinanceProps> = ({ allowedTabs = ['procurement', 'sa
     const rawCost = periodCosts.reduce((sum, c) => sum + (c.rawMaterialCost || 0), 0);
     const laborCost = periodCosts.reduce((sum, c) => sum + (c.laborCost || 0), 0);
     const wasteCost = periodCosts.reduce((sum, c) => sum + (c.wastageCost || 0), 0);
-    const pkgCost = periodPOs.reduce((sum, p) => sum + p.totalCost, 0);
+    const pkgCost = periodCosts.reduce((sum, c) => sum + (c.packagingCost || 0), 0); // Usage based for consistency
     const totalExp = rawCost + laborCost + wasteCost + pkgCost;
     return { revenue, rawCost, laborCost, wasteCost, pkgCost, totalExp, profit: revenue - totalExp, count: periodSales.length, aov: periodSales.length > 0 ? revenue / periodSales.length : 0, margin: revenue > 0 ? ((revenue - totalExp) / revenue) * 100 : 0, startDate: cutoff.toLocaleDateString(), endDate: new Date().toLocaleDateString() };
   }, [reportPeriod, sales, dailyCosts, purchaseOrders]);
@@ -248,10 +249,16 @@ const FinancePage: React.FC<FinanceProps> = ({ allowedTabs = ['procurement', 'sa
     refreshData();
   };
 
+  // UPDATED PIE CHART DATA: Now using the usage-based totalPackagingCost
   const slices = (() => {
     let cumulativePercent = 0;
     const total = totalOverallCost;
-    const data = [ { label: 'Raw Materials', color: '#15803d', cost: totalRawMaterialCost }, { label: 'Packaging', color: '#16a34a', cost: totalPackagingProcurement }, { label: 'Labor', color: '#3b82f6', cost: totalLaborCost }, { label: 'Wastage', color: '#ef4444', cost: totalWastageCost } ];
+    const data = [ 
+      { label: 'Raw Materials', color: '#15803d', cost: totalRawMaterialCost }, 
+      { label: 'Packaging', color: '#16a34a', cost: totalPackagingCost }, 
+      { label: 'Labor', color: '#3b82f6', cost: totalLaborCost }, 
+      { label: 'Wastage', color: '#ef4444', cost: totalWastageCost } 
+    ];
     return data.map(d => ({ ...d, pct: total > 0 ? (d.cost / total) * 100 : 0 })).filter(d => d.pct > 0).map((s, i) => {
         const x = Math.cos(2 * Math.PI * cumulativePercent); const y = Math.sin(2 * Math.PI * cumulativePercent);
         cumulativePercent += s.pct / 100;
