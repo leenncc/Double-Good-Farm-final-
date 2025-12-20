@@ -528,7 +528,7 @@ export const pullFullDatabase = async () => ({ success: true, message: "Data pul
 export const THEMES = {
   mushroom: { id: 'mushroom', label: 'Mushroom Earth', colors: { '--earth-800': '#292524', '--earth-900': '#1c1917', '--earth-700': '#44403c', '--earth-500': '#78716c', '--earth-200': '#e7e5e4', '--earth-100': '#f5f5f4', '--nature-600': '#16a34a', '--nature-500': '#22c55e', '--nature-400': '#4ade80', '--nature-900': '#14532d', '--nature-50': '#f0fdf4', '--nature-200': '#bbf7d0', '--nature-700': '#15803d' } },
   midnight: { id: 'midnight', label: 'Midnight Forest', colors: { '--earth-800': '#0f172a', '--earth-900': '#020617', '--earth-700': '#1e293b', '--earth-500': '#64748b', '--earth-200': '#e2e8f0', '--earth-100': '#f1f5f9', '--nature-600': '#0891b2', '--nature-500': '#06b6d4', '--nature-400': '#22d3ee', '--nature-900': '#164e63', '--nature-50': '#ecfeff', '--nature-200': '#a5f3fc', '--nature-700': '#0e7490' } },
-  // Fixed duplicate '--nature-50' property. The first one was changed to '--nature-500'.
+  // Fixed error in line 531: duplicated property '--nature-50'. First occurrence changed to '--nature-500'.
   royal: { id: 'royal', label: 'Royal Harvest', colors: { '--earth-800': '#4c1d95', '--earth-900': '#2e1065', '--earth-700': '#5b21b6', '--earth-500': '#8b5cf6', '--earth-200': '#ddd6fe', '--earth-100': '#f5f3ff', '--nature-600': '#e11d48', '--nature-500': '#f43f5e', '--nature-400': '#fb7185', '--nature-900': '#881337', '--nature-50': '#fff1f2', '--nature-200': '#fecdd3', '--nature-700': '#be123c' } }
 };
 
@@ -574,9 +574,10 @@ export const createBatch = async (farm: string, raw: number, spoiled: number, fa
 /**
  * packRecipeFIFO (MODIFIED):
  * 1. Validates inventory levels to prevent negative stock.
- * 2. Correctly deducts raw material weight using FIFO logic.
- * 3. Archives (disappears) empty batches.
- * 4. Logs COGS (Raw Materials + Packaging + Labor) at the point of packing.
+ * 2. Correctly deducts raw material weight using FIFO logic across batches.
+ * 3. Handles "residual weight" by calculating actual available weight (Remaining - Wastage).
+ * 4. Archives (disappears) empty batches or those where all "good" weight is packed.
+ * 5. Logs COGS (Raw Materials + Packaging + Labor) at the point of packing.
  */
 export const packRecipeFIFO = async (recipeName: string, totalWeightToPack: number, packCount: number, packagingType: 'TIN' | 'POUCH'): Promise<ApiResponse<void>> => {
     try {
@@ -601,12 +602,16 @@ export const packRecipeFIFO = async (recipeName: string, totalWeightToPack: numb
         let totalProcessingHours = 0;
         const relevantBatches = (batchRes.data || [])
             .filter(b => (b.selectedRecipeName === recipeName || b.recipeType === recipeName) && 
-                         (b.status === BatchStatus.DRYING_COMPLETE || b.status === BatchStatus.PACKED) &&
-                         (b.remainingWeightKg ?? b.netWeightKg) > 0.001)
+                         (b.status === BatchStatus.DRYING_COMPLETE || b.status === BatchStatus.PACKED))
             .sort((a, b) => new Date(a.dateReceived).getTime() - new Date(b.dateReceived).getTime());
 
-        // Validate Total Available Batch Weight
-        const totalAvailWeight = relevantBatches.reduce((sum, b) => sum + (b.remainingWeightKg ?? b.netWeightKg), 0);
+        // Validate Total Available Batch Weight (Actual Available = Gross - Wastage)
+        const totalAvailWeight = relevantBatches.reduce((sum, b) => {
+            const gross = b.remainingWeightKg ?? b.netWeightKg;
+            const waste = b.processingWastageKg || 0;
+            return sum + Math.max(0, gross - waste);
+        }, 0);
+
         if (totalAvailWeight < totalWeightToPack) {
             return { success: false, message: `Insufficient batch weight. Have: ${totalAvailWeight.toFixed(2)}kg, Need: ${totalWeightToPack.toFixed(2)}kg` };
         }
@@ -615,12 +620,30 @@ export const packRecipeFIFO = async (recipeName: string, totalWeightToPack: numb
         for (const batch of relevantBatches) {
             if (remainingToDeduct <= 0) break;
             
-            const currentAvail = batch.remainingWeightKg ?? batch.netWeightKg;
-            const deduction = Math.min(currentAvail, remainingToDeduct);
-            const newRemaining = Math.max(0, currentAvail - deduction);
-            remainingToDeduct -= deduction;
+            const grossRemaining = batch.remainingWeightKg ?? batch.netWeightKg;
+            const wastage = batch.processingWastageKg || 0;
+            const actualAvailable = Math.max(0, grossRemaining - wastage);
+            
+            if (actualAvailable <= 0.001) continue; // Skip batches that are essentially empty or pure waste
 
-            // Track labor hours (Default to 2 hours if no config exists per requirement)
+            let deductionFromGross = 0;
+            let newStatus = batch.status;
+
+            // FIX: If we pack everything that is available, we close the batch entirely
+            if (remainingToDeduct >= actualAvailable) {
+                deductionFromGross = grossRemaining; // Zero out the whole remaining gross
+                remainingToDeduct -= actualAvailable;
+                newStatus = BatchStatus.PACKED;
+            } else {
+                // Partial deduction: only deduct what we need from the gross pool
+                deductionFromGross = remainingToDeduct;
+                remainingToDeduct = 0;
+            }
+
+            const newRemaining = Math.max(0, grossRemaining - deductionFromGross);
+            if (newRemaining <= 0.001) newStatus = BatchStatus.PACKED;
+
+            // Track labor hours (Default to 2 hours if no config exists)
             const hours = batch.processConfig 
                 ? (batch.processConfig.totalDurationSeconds / 3600) 
                 : 2;
@@ -628,7 +651,7 @@ export const packRecipeFIFO = async (recipeName: string, totalWeightToPack: numb
 
             batchUpdates.push(db.collection('batches').doc(batch.id).update({
                 remainingWeightKg: newRemaining,
-                status: newRemaining <= 0.001 ? BatchStatus.PACKED : batch.status,
+                status: newStatus,
                 packedDate: new Date().toISOString()
             }));
         }
