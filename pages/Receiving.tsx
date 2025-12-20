@@ -123,6 +123,15 @@ const ReceivingPage: React.FC<ReceivingPageProps> = ({ prefillData, onClear }) =
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.sourceFarm || !formData.rawWeight) return;
+
+    // --- NEW VALIDATION RULE ---
+    const raw = parseFloat(formData.rawWeight) || 0;
+    const spoiled = parseFloat(formData.spoiledWeight) || 0;
+    if (spoiled > raw) {
+        alert("Error: Spoiled weight cannot exceed total weight.");
+        return;
+    }
+    
     setStatus('submitting');
     
     // 1. Save to Inventory (createBatch updated to accept new fields)
