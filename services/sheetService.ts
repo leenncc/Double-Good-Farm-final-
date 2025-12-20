@@ -281,9 +281,38 @@ export const submitOnlineOrder = async (customerName: string, customerPhone: str
     }
 };
 
+/**
+ * updateSaleStatus (FIXED):
+ * 1. Implements re-stocking logic when an order is cancelled.
+ * 2. Fetches the sale record to find associated items and restores their quantity to stock.
+ */
 export const updateSaleStatus = async (saleId: string, status: SalesStatus, additionalData?: any): Promise<ApiResponse<SalesRecord>> => {
-  await db.collection('sales').doc(saleId).update(cleanFirestoreData({ status, ...additionalData }));
-  return { success: true };
+  try {
+    // Restore inventory if order is cancelled
+    if (status === 'CANCELLED') {
+      const saleRef = db.collection('sales').doc(saleId);
+      const saleSnap = await saleRef.get();
+      
+      if (saleSnap.exists) {
+        const saleData = saleSnap.data() as SalesRecord;
+        
+        // Prevent double restocking if already cancelled
+        if (saleData.status !== 'CANCELLED') {
+          const restockPromises = (saleData.items || []).map(item => {
+            return db.collection('finished_goods').doc(item.finishedGoodId).update({
+              quantity: firebase.firestore.FieldValue.increment(item.quantity)
+            });
+          });
+          await Promise.all(restockPromises);
+        }
+      }
+    }
+
+    await db.collection('sales').doc(saleId).update(cleanFirestoreData({ status, ...additionalData }));
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, message: error.message };
+  }
 };
 
 // --- PRODUCTION & COSTS ---
